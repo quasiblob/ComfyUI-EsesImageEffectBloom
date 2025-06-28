@@ -2,6 +2,9 @@
 
 ![Eses Image Effect Bloom Node Screenshot](docs/image_effect_bloom.png)
 
+> [!CAUTION]
+> Before dowloading and using this repository, please read the LICENSE.txt and the disclaimer - Thank you!
+
 ## Description
 
 The 'Eses Image Effect Bloom' is a ComfyUI custom node that provides a configurable bloom effect. It simulates the natural glow of bright light sources in a photographic image, allowing for artistic bloom effects using a GPU-accelerated PyTorch backend for real-time performance. 
