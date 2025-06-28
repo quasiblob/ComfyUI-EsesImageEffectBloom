@@ -3,7 +3,7 @@
 ![Eses Image Effect Bloom Node Screenshot](docs/image_effect_bloom.png)
 
 > [!CAUTION]
-> Before dowloading and using this repository, please read the LICENSE.txt and the disclaimer - Thank you!
+> Before dowloading and using the contents of this repository, please read the LICENSE.txt and the disclaimer - Thank you!
 
 ## Description
 
