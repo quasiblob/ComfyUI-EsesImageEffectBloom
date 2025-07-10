@@ -16,7 +16,8 @@
 #   - high_threshold: Sets the white point, controlling the highlight range.
 #
 # - Glow Controls:
-#   - blur_type: Choose between a high-quality 'gaussian' or a fast 'box' blur.
+#   - effect_type: Choose between a high-quality 'gaussian', a fast 'box' blur,
+#     or a cinematic 'light_streaks' effect.
 #   - blur_radius: Controls the size and softness of the glow.
 #   - highlights_brightness: Multiplies the brightness of the glow before blending.
 #
@@ -30,7 +31,8 @@
 # 'highlights_image' shows the isolated glow layer for diagnostics, and
 # 'image' outputs the original, unaltered image for convenience.
 #
-# Version: 1.0.0
+# Version: 1.1.1
+#
 # License: see LICENSE.txt
 #
 # ==========================================================================
@@ -69,6 +71,32 @@ def _gaussian_blur_separable(image: torch.Tensor, radius: float) -> torch.Tensor
     blurred_hv = F.conv2d(blurred_h, kernel_v, padding='same', groups=channels)
     
     return blurred_hv
+
+def _streaks_blur(image: torch.Tensor, radius: float) -> torch.Tensor:
+    """
+    Applies a directional blur to create a 'streaks' or 'cross' effect.
+    It blurs horizontally and vertically in separate passes and adds them.
+    """
+    sigma = max(radius, 0.01) # Ensure sigma is not zero
+    kernel_size = int(sigma * 4) * 2 + 1
+    
+    # Create a 1D Gaussian kernel
+    kernel_1d_range = torch.arange(kernel_size, dtype=torch.float32, device=image.device) - (kernel_size - 1) / 2
+    kernel_1d = torch.exp(-kernel_1d_range**2 / (2 * sigma**2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+    
+    channels = image.shape[1]
+    
+    # Create horizontal and vertical kernels
+    kernel_h = kernel_1d.view(1, 1, 1, -1).repeat(channels, 1, 1, 1)
+    kernel_v = kernel_1d.view(1, 1, -1, 1).repeat(channels, 1, 1, 1)
+    
+    # Apply horizontal and vertical blurs independently to the original image
+    blurred_h = F.conv2d(image, kernel_h, padding='same', groups=channels)
+    blurred_v = F.conv2d(image, kernel_v, padding='same', groups=channels)
+    
+    # Add the two blurred images together to create the cross effect
+    return blurred_h + blurred_v
 
 def _box_blur(image: torch.Tensor, radius: float) -> torch.Tensor:
     """
@@ -164,23 +192,23 @@ class EsesImageEffectBloom:
             "required": {
                 "image": ("IMAGE",),
                 "low_threshold": ("FLOAT", {
-                    "default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "default": 0.7, "min": 0.0, "max": 1.0, "step": 0.001, # MODIFIED: Increased precision
                     "tooltip": "Pixels darker than this value will not glow."
                 }),
                 "high_threshold": ("FLOAT", {
-                    "default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "default": 0.95, "min": 0.0, "max": 1.0, "step": 0.001, # MODIFIED: Increased precision
                     "tooltip": "Sets the white point for the highlights, controlling the range of pixels that glow."
                 }),
-                "blur_type": (["box", "gaussian"], {
+                "effect_type": (["gaussian", "box", "light_streaks"], {
                     "default": "gaussian",
-                    "tooltip": "'gaussian' is high-quality but slower; 'box' is a very fast approximation."
+                    "tooltip": "'gaussian' is high-quality, 'box' is fast, 'light_streaks' creates a cross-like glow."
                 }),
                 "blur_radius": ("FLOAT", {
                     "default": 30.0, "min": 0.0, "max": 512.0, "step": 0.1,
                     "tooltip": "Controls the size and softness of the glow in pixels."
                 }),
                 "highlights_brightness": ("FLOAT", {
-                    "default": 1.0, "min": 1.0, "max": 30.0, "step": 0.01,
+                    "default": 1.0, "min": 1.0, "max": 100.0, "step": 0.01, # MODIFIED: Increased max range
                     "tooltip": "A multiplier for the glow's intensity before it's blended with the image."
                 }),
                 "blend_mode": (["screen", "add", "multiply", "overlay", "soft_light", "hard_light"], {
@@ -197,7 +225,7 @@ class EsesImageEffectBloom:
             }, "optional": { "mask": ("MASK",) }
         }
 
-    def apply_bloom(self, image: torch.Tensor, low_threshold: float, high_threshold: float, blur_type: str, blur_radius: float, highlights_brightness: float, blend_mode: str, fade: float, blur_resolution_limit_px: int, mask: torch.Tensor = None):
+    def apply_bloom(self, image: torch.Tensor, low_threshold: float, high_threshold: float, effect_type: str, blur_radius: float, highlights_brightness: float, blend_mode: str, fade: float, blur_resolution_limit_px: int, mask: torch.Tensor = None):
         if not isinstance(image, torch.Tensor):
             raise TypeError("Input 'image' must be a torch.Tensor")
 
@@ -258,8 +286,10 @@ class EsesImageEffectBloom:
             effective_blur_radius = blur_radius * total_scale_factor
 
             # --- E. Apply the blur to the (potentially tiny) image ---
-            if blur_type == 'gaussian':
+            if effect_type == 'gaussian':
                 blurred_highlights_small = _gaussian_blur_separable(image_to_blur, effective_blur_radius)
+            elif effect_type == 'light_streaks':
+                blurred_highlights_small = _streaks_blur(image_to_blur, effective_blur_radius)
             else: # box
                 blurred_highlights_small = _box_blur(image_to_blur, effective_blur_radius)
 
@@ -298,3 +328,4 @@ class EsesImageEffectBloom:
             mask = torch.ones(1, image.shape[1], image.shape[2], dtype=torch.float32, device=image.device)
             
         return (modified_image, blend, base, mask,)
+    
